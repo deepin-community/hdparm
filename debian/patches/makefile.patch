@@ -1,0 +1,13 @@
+Subject: Don't hardcode the number of parallel jobs "-j4"
+From: Alex Mestiashvili <mailatgoogl@gmail.com>
+--- hdparm.orig/Makefile
++++ hdparm/Makefile
+@@ -23,7 +23,7 @@
+ OBJS = hdparm.o identify.o sgio.o sysfs.o geom.o fallocate.o fibmap.o fwdownload.o dvdspeed.o wdidle3.o apt.o
+ 
+ all:
+-	$(MAKE) -j4 hdparm
++	make hdparm
+ 
+ static:
+ 	LDFLAGS=-static $(MAKE)
