@@ -1,9 +1,10 @@
 Subject: Apply changes mentioned in #900446, #959214
 From: Bjarni Ingi Gislason <bjarniig@rhi.hi.is>
 Date: Tue, 15 Dec 2020 21:25:11 +0100
---- hdparm.orig/hdparm.8
-+++ hdparm/hdparm.8
-@@ -6,22 +6,23 @@
+--- a/hdparm.8
++++ b/hdparm.8
+@@ -5,43 +5,44 @@
+ .SH SYNOPSIS
  .B hdparm
  [options] [device ...]
  .SH DESCRIPTION
@@ -33,7 +34,7 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  Get/set sector count for filesystem (software) read-ahead.
  This is used to improve performance in sequential reads of large files,
  by prefetching additional
-@@ -29,18 +30,18 @@
+ blocks in anticipation of them being needed by the running task.
  Many IDE drives also have a separate built-in read-ahead function,
  which augments this filesystem (software) read-ahead function.
  .TP
@@ -58,7 +59,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  Get/set Advanced Power Management feature, if the drive supports it. A low value
  means aggressive power management and a high value means better performance.
  Possible settings range from values 1 through 127 (which permit spin-down),
-@@ -50,7 +51,7 @@
+ and values 128 through 254 (which do not permit spin-down).
+@@ -49,9 +50,9 @@
+ and the highest I/O performance with a setting of 254.
  A value of 255 tells hdparm to disable Advanced Power Management altogether
  on the drive (not all drives support disabling it, but most do).
  .TP
@@ -67,7 +70,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  Get/set (E)IDE 32-bit I/O support.  A numeric parameter can be
  used to enable/disable 32-bit I/O support.
  Currently supported values include
-@@ -69,7 +70,7 @@
+ .B 0
+@@ -68,9 +69,9 @@
+ Note that "32-bit" refers to data transfers across a PCI or VLB bus to the
  interface card only; all (E)IDE drives still have only a 16-bit connection
  over the ribbon cable from the interface card.
  .TP
@@ -76,7 +81,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  Check the current IDE power mode status, which will always be one of
  .B unknown
  (drive does not support this command),
-@@ -81,19 +82,19 @@
+ .B active/idle
+@@ -80,73 +81,74 @@
+ or
  .B sleeping
  (lowest power mode, drive is completely shut down).
  The
@@ -101,7 +108,8 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  to ensure that the drive itself is programmed for the correct DMA mode,
  although most BIOSs should do this for you at boot time.
  Using DMA nearly always gives the best performance,
-@@ -102,50 +103,51 @@
+ with fast I/O throughput and low CPU usage.
+ But there are at least a few configurations of chipsets and drives
  for which DMA does not make much of a difference, or may even slow
  things down (on really messed up hardware!).  Your mileage may vary.
  .TP
@@ -168,7 +176,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  .B VERY DANGEROUS, DON'T EVEN THINK ABOUT USING IT.
  This option causes hdparm to issue an IDENTIFY command
  to the kernel, but incorrectly marked as a "non-data" command.
-@@ -155,44 +157,45 @@
+ This results in the drive being left with its DataReQust(DRQ) line
+@@ -154,168 +156,169 @@
+ immediately with massive data loss.  The option exists to help in testing
  and fortifying the kernel against similar real-world drive malfunctions.
  .B VERY DANGEROUS, DO NOT USE!!
  .TP
@@ -226,7 +236,8 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  When used, this must be the only option given.
  It requires a file path as a parameter, and will print
  out a list of the block extents (sector ranges)
-@@ -201,18 +204,18 @@
+ occupied by that file on disk.
+ Sector numbers are given as absolute LBA numbers,
  referenced from sector 0 of the physical device rather
  than from the partition or filesystem.
  This information can then be used for a variety of purposes,
@@ -248,7 +259,8 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  When used, this should be the only option given.
  It requires a file path immediately after the
  option, indicating where the new drive firmware should be read from.
-@@ -221,73 +224,73 @@
+ The contents of this file will be sent to the drive using the
+ (S)ATA
  .B DOWNLOAD MICROCODE
  command, using either transfer protocol 7 (entire file at once),
  or, if the drive supports it, transfer protocol 3 (segmented download).
@@ -343,7 +355,7 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  option,
  which accepts a drive identification block as standard input
  instead of using a /dev/hd* parameter.
-@@ -295,32 +298,33 @@
+ The format of this block must be
  .B exactly
  the same as that found in the /proc/ide/*/hd*/identify "files",
  or that produced by the
@@ -357,6 +369,10 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
 -.B --Istdin
 +.B \-\-Istdin
  is used, it must be the *only* parameter given.
+ Note that some information will be incomplete, as the drive LOG PAGES are unavailable when
+-.B --Istdin
++.B \-\-Istdin
+ is used.
  .TP
 -.I --Istdout
 +.I \-\-Istdout
@@ -373,19 +389,8 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  This timeout controls how often the drive parks its heads and enters
  a low power consumption state.  The factory default is eight (8) seconds,
  which is a very poor choice for use with Linux.  Leaving it at the default
- will result in hundreds of thousands of head load/unload cycles in a very
--short period of time.  The drive mechanism is only rated for 300,000 to 1,000,000
-+short period of time.
-+The drive mechanism is only rated for 300,000 to 1,000,000
- cycles, so leaving it at the default could result in premature failure,
--not to mention the performance impact of the drive often having to wake-up
--before doing routine I/O.
-+not to mention the performance impact of the drive often having to
-+wake-up before doing routine I/O.
- .IP
- WD supply a WDIDLE3.EXE DOS utility for tweaking this setting,
- and you should use that program instead of hdparm
-@@ -336,16 +340,16 @@
+@@ -338,37 +341,37 @@
+ in 30-second increments.
  Specify a value of zero (0) to disable the WD idle3 timer completely
  (NOT RECOMMENDED!).
  .TP
@@ -406,7 +411,7 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  option should therefore only be set after one has achieved confidence in
  correct system operation with a chosen set of configuration settings.
  In practice, all that is typically necessary to test a configuration
-@@ -353,18 +357,18 @@
+ (prior to using \-k) is to verify that the drive can be read/written,
  and that no error logs (kernel messages) are generated in the process
  (look in /var/log/messages on most systems).
  .TP
@@ -431,7 +436,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  .B 0
  will unlock the door mechanism.  Normally, Linux
  maintains the door locking mechanism automatically, depending on drive usage
-@@ -376,14 +380,14 @@
+ (locked whenever a filesystem is mounted).  But on system shutdown, this can
+@@ -378,76 +381,84 @@
+ .B after
  the root filesystem is remounted read-only, one can then remove the cartridge
  from the drive after shutdown.
  .TP
@@ -448,7 +455,7 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  of anywhere from 5% to 50%.  Some drives, however
  (most notably the WD Caviar series),
  seem to run slower with multiple mode enabled.  Your mileage may vary.
-@@ -391,59 +395,67 @@
+ Most drives support the minimum settings of
  2, 4, 8, or 16 (sectors).  Larger settings may also be possible, depending on
  the drive.  A setting of 16 or 32 seems optimal on many systems.
  Western Digital recommends lower settings of 4 to 8 on many of their drives,
@@ -540,7 +547,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  displays the current setting, which is reported as two values: the first
  gives the current max sectors setting, and the second shows
  the native (real) hardware limit for the disk.
-@@ -454,19 +466,19 @@
+ The difference between these two values indicates how many sectors of the disk
+@@ -456,49 +467,49 @@
+ This area is often used by computer makers to hold diagnostic software,
  and/or a copy of the originally provided operating system for recovery purposes.
  Another possible use is to hide the true capacity of a very large disk
  from a BIOS/system that cannot normally cope with drives of that size
@@ -564,7 +573,7 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  affects only the temporary (volatile) setting.  To change the permanent
  (non-volatile) value, prepend a leading
  .B p
-@@ -474,27 +486,27 @@
+ character immediately before the first digit of the value.
  Drives are supposed to allow only a single permanent
  change per session.  A hardware reset (or power cycle) is required
  before another permanent
@@ -600,7 +609,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  Attempt to reprogram the IDE interface chipset for the specified PIO mode,
  or attempt to auto-tune for the "best" PIO mode supported by the drive.
  This feature is supported in the kernel for only a few "known" chipsets,
-@@ -510,65 +522,69 @@
+ and even then the support is iffy at best.  Some IDE chipsets are unable
+@@ -512,67 +523,71 @@
+ This feature includes zero protection for the unwary,
  and an unsuccessful outcome may result in
  .I severe filesystem corruption!
  .TP
@@ -693,7 +704,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  Enable/disable the power-on in standby feature, if supported by
  the drive.
  .B VERY DANGEROUS.
-@@ -588,7 +604,7 @@
+ Do not use unless you are absolutely certain
+@@ -590,9 +605,9 @@
+ Some SATA drives support the control of this feature by pin 11 of
  the SATA power connector. In these cases, this command may be
  unsupported or may have no effect.
  .TP
@@ -702,7 +715,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  Put the drive into idle (low-power) mode, and also set the standby
  (spindown) timeout for the drive.  This timeout value is used
  by the drive to determine how long to wait (with no disk activity)
-@@ -606,7 +622,7 @@
+ before turning off the spindle motor to save power.  Under such
+@@ -608,68 +623,70 @@
+ and 12 hours, and the value 254 is reserved.  255 is interpreted as 21
  minutes plus 15 seconds.  Note that some older drives may have very
  different interpretations of these values.
  .TP
@@ -711,7 +726,7 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  For drives which support reconfiguring of the Logical Sector Size,
  this flag can be used to specify the new desired sector size in bytes.
  .B VERY DANGEROUS.  This most likely will scramble all data on the drive.
-@@ -614,9 +630,9 @@
+ The specified size must be one of 512, 520, 528, 4096, 4160, or 4224.
  Very few drives support values other than 512 and 4096.  Eg.
  .B hdparm --set-sector-size 4096 /dev/sdb
  .TP
@@ -723,7 +738,7 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  an otherwise inactive system (no other active processes) with at least a
  couple of megabytes of free memory.  This displays the speed of reading
  through the buffer cache to the disk without any prior caching of data.
-@@ -624,48 +640,50 @@
+ This measurement is an indication of how fast the drive can sustain
  sequential data reads under Linux, without any filesystem overhead.  To
  ensure accurate measurements, the buffer cache is flushed during the
  processing of
@@ -788,7 +803,9 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  overrun" errors.
  .B Use this feature with caution:
  some drive/controller combinations do
-@@ -684,56 +702,57 @@
+ not tolerate the increased I/O latencies possible when this feature is enabled,
+@@ -686,200 +703,202 @@
+ .B IDE prefetch
  feature of these interfaces (usually a BIOS/CMOS setting)
  provides a safe fix for the problem for use with earlier kernels.
  .TP
@@ -863,7 +880,8 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  option)
  for the new mode setting to prevent loss and/or corruption of data.
  .I Use this with extreme caution!
-@@ -742,116 +761,117 @@
+ For the PIO (Programmed Input/Output)
+ transfer modes used by Linux, this value is simply the desired
  PIO mode number plus 8.
  Thus, a value of 09 sets PIO mode1, 10 enables PIO mode2,
  and 11 selects PIO mode3.
@@ -1014,7 +1032,8 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
          h       high security
          m       maximum security
  
-@@ -860,22 +880,22 @@
+ .B THIS FEATURE IS EXPERIMENTAL AND NOT WELL TESTED. USE AT YOUR OWN RISK.
+ .SH FILES
  /etc/hdparm.conf
  .SH BUGS
  As noted above, the
@@ -1043,3 +1062,4 @@ Date: Tue, 15 Dec 2020 21:25:11 +0100
  security unlock and disable commands gracefully and will segfault and in some
  cases even panic. The security commands however might indeed have been executed
  by the drive. This poor kernel behaviour makes the PIO data security commands
+ rather useless at the moment.
