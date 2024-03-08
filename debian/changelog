@@ -1,3 +1,12 @@
+hdparm (9.65+ds-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #1018078).
+  * Rules-Requires-Root: no.
+  * Standards-Version: 4.6.1.
+  * Added myself to Uploaders.
+
+ -- Dmitry Smirnov <onlyjob@debian.org>  Fri, 07 Oct 2022 00:33:00 +1100
+
 hdparm (9.60+ds-1) unstable; urgency=medium
 
   * d/copyright: add identify.c.orig to Files-Excluded

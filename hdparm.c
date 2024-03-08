@@ -1,8 +1,8 @@
 /*
  * hdparm.c - Command line interface to get/set hard disk parameters.
- *          - by Mark Lord (C) 1994-2018 -- freely distributable.
+ *          - by Mark Lord (C) 1994-2022 -- freely distributable.
  */
-#define HDPARM_VERSION "v9.60"
+#define HDPARM_VERSION "v9.65"
 
 #define _LARGEFILE64_SOURCE /*for lseek64*/
 #define _BSD_SOURCE	/* for strtoll() */
@@ -25,7 +25,9 @@
 #include <sys/mman.h>
 #include <sys/user.h>
 #include <linux/types.h>
+#ifndef FSCONFIG_SET_FLAG
 #include <linux/fs.h>
+#endif
 #include <linux/major.h>
 #include <endian.h>
 #include <asm/byteorder.h>
@@ -99,6 +101,7 @@ static char security_password[33], *fwpath, *raw_identify_path;
 
 static int do_sanitize = 0;
 static __u16 sanitize_feature = 0;
+static __u64 sanitize_overwrite_passes = 0;
 static __u32 ow_pattern = 0;
 static const char *sanitize_states_str[SANITIZE_STATE_NUMBER] = {
 	"SD0 Sanitize Idle",
@@ -507,7 +510,7 @@ static void dump_identity (__u16 *idw)
 	printf(" CurCHS=%u/%u/%u, CurSects=%u", idw[54], idw[55], idw[56], idw[57] | (idw[58] << 16));
 	printf(", LBA=%s", YN(idw[49] & 0x200));
 	if (idw[49] & 0x200)
- 		printf(", LBAsects=%llu", get_lba_capacity(idw));
+		printf(", LBAsects=%llu", get_lba_capacity(idw));
 
 	if (idw[49] & 0x100) {
 		if (idw[62] | idw[63]) {
@@ -625,14 +628,16 @@ static void interpret_standby (void)
 				unsigned int secs = standby * 5;
 				unsigned int mins = secs / 60;
 				secs %= 60;
-				if (mins)	  printf("%u minutes", mins);
+				if (mins)	  printf("%u minute%s", mins,
+							 mins==1 ? "" : "s");
 				if (mins && secs) printf(" + ");
 				if (secs)	  printf("%u seconds", secs);
 			} else if (standby <= 251) {
 				unsigned int mins = (standby - 240) * 30;
 				unsigned int hrs  = mins / 60;
 				mins %= 60;
-				if (hrs)	  printf("%u hours", hrs);
+				if (hrs)	  printf("%u hour%s", hrs,
+							 hrs==1 ? "" : "s");
 				if (hrs && mins)  printf(" + ");
 				if (mins)	  printf("%u minutes", mins);
 			} else {
@@ -895,6 +900,11 @@ do_sanitize_cmd (int fd)
 		r.iflags.bits.lob.lbal    = 1;
 		r.iflags.bits.lob.lbam    = 1;
 		r.iflags.bits.hob.nsect   = 1;
+
+		if (sanitize_feature == SANITIZE_OVERWRITE_EXT) {
+			r.oflags.bits.lob.nsect = 1;
+			r.lob.nsect = sanitize_overwrite_passes;
+		}
 
 		printf("Issuing %s command\n", description);
 		if (do_taskfile_cmd(fd, &r, 10)) {
@@ -1352,8 +1362,8 @@ static __u64 do_get_native_max_sectors (int fd)
 			if (verbose)
 				printf("GET_NATIVE_MAX_ADDRESS_EXT response: hob={%02x %02x %02x} lob={%02x %02x %02x}\n",
 					   r.hob.lbah, r.hob.lbam, r.hob.lbal, r.lob.lbah, r.lob.lbam, r.lob.lbal);
-			max = (((__u64)((r.hob.lbah << 16) | (r.hob.lbam << 8) | r.hob.lbal) << 24)
-				   | ((r.lob.lbah << 16) | (r.lob.lbam << 8) | r.lob.lbal)) + 1;
+			max = (((__u64)((r.hob.lbah << 16) | ((__u64)(r.hob.lbam << 8) | r.hob.lbal)) << 24)
+				   | (__u64)((r.lob.lbah << 16) | (r.lob.lbam << 8) | r.lob.lbal)) + 1;
 		}
 	} else { // ACS2 or below, or optional AMAX not present
 		if (SUPPORTS_48BIT_ADDR(id)) {
@@ -1371,7 +1381,7 @@ static __u64 do_get_native_max_sectors (int fd)
 					printf("READ_NATIVE_MAX_ADDRESS_EXT response: hob={%02x %02x %02x} lob={%02x %02x %02x}\n",
 						r.hob.lbah, r.hob.lbam, r.hob.lbal, r.lob.lbah, r.lob.lbam, r.lob.lbal);
 				max = (((__u64)((r.hob.lbah << 16) | (r.hob.lbam << 8) | r.hob.lbal) << 24)
-				     	| ((r.lob.lbah << 16) | (r.lob.lbam << 8) | r.lob.lbal)) + 1;
+				     	| ((__u64)(r.lob.lbah << 16) | (r.lob.lbam << 8) | r.lob.lbal)) + 1;
 			}
 		} else {
 			/* DEVICE (3:0) / LBA (27:24) "remap" does NOT apply in ATA Status Return */
@@ -1556,7 +1566,7 @@ static void do_trim_sector_ranges (int fd, const char *devname, int nranges, str
 	for (i = 0; i < nranges; ++i) {
 		nsectors += sr->nsectors;
 		range = sr->nsectors;
-		range = (range << 48) | sr->lba;
+		range = (__u64)(range << 48) | sr->lba;
 		data[i] = __cpu_to_le64(range);
 		++sr;
 	}
@@ -1613,18 +1623,40 @@ get_set_sector_index (int fd, unsigned int wanted_sector_size, int *checkword)
 {
 	__u8 d[512] = {0,};
 	const int SECTOR_CONFIG = 0x2f;
-	int i, rc;
+	int i, rc, found_byte_lss = 0, found_word_lss = 0, lss_is_bytes = 0;
+	unsigned int current_lss;
 
 	rc = get_log_page_data(fd, SECTOR_CONFIG, 0, d);
 	if (rc) {
 		fprintf(stderr, "READ_LOG_EXT(SECTOR_CONFIGURATION) failed: %s\n", strerror(rc));
 		exit(1);
 	}
+	/*
+	 * Some devices incorrectly return logical sector size (lss) as bytes.
+	 * Scan log entries and if the current lss is in the log, and there isn't an equivalent
+	 * entry in words, assume the device is returning the logical sector size in bytes.
+	 * Doing this takes two passes through the log data.
+	 */
+	current_lss = (unsigned int)get_current_sector_size(fd);
 	for (i = 0; i < 128; i += 16) {
 		unsigned int lss;
 		if ((d[i] & 0x80) == 0)  /* Is this descriptor valid? */
 			continue;  /* not valid */
 		lss = d[i + 4] | (d[i + 5] << 8) | (d[i + 6] << 16) | (d[i + 7] << 24);  /* logical sector size */
+		if (lss == current_lss) {
+			found_byte_lss = 1;  /* found lss in bytes */
+		} else if ((lss * 2) == current_lss) {
+			found_word_lss = 1;  /* found lss in words */
+			break;
+		}
+	}
+	lss_is_bytes = !found_word_lss && found_byte_lss;
+	for (i = 0; i < 128; i += 16) {
+		unsigned int lss;
+		if ((d[i] & 0x80) == 0)  /* Is this descriptor valid? */
+			continue;  /* not valid */
+		lss = d[i + 4] | (d[i + 5] << 8) | (d[i + 6] << 16) | (d[i + 7] << 24);  /* logical sector size */
+		lss = lss_is_bytes ? lss : lss * 2;
 		if (lss == wanted_sector_size) {
 			*checkword = d[i + 2] | (d[i + 3] << 8);
 			return i / 16;  /* descriptor index */
@@ -1720,7 +1752,7 @@ do_trim_from_stdin (int fd, const char *devname)
 			err = errno;
 			fprintf(stderr, "stdin: error at lba:count pair #%d: %s\n", (total_ranges + 1), strerror(err));
 		} else {
-			range = (nsect << 48) | lba;
+			range = (__u64)(nsect << 48) | lba;
 			nsectors += nsect;
 			data[nranges++] = __cpu_to_le64(range);
 			if (nranges == max_ranges) {
@@ -1936,7 +1968,7 @@ static void usage_help (int clue, int rc)
 	" --fwdownload-modee-max  Download firmware using mode E (max-size segments) (EXTREMELY DANGEROUS)\n"
 	" --idle-immediate  Idle drive immediately\n"
 	" --idle-unload     Idle immediately and unload heads\n"
-  " --Iraw filename   Write raw binary identify data to the specfied file\n"
+	" --Iraw filename   Write raw binary identify data to the specfied file\n"
 	" --Istdin          Read identify data from stdin as ASCII hex\n"
 	" --Istdout         Write identify data to stdout as ASCII hex\n"
 	" --make-bad-sector Deliberately corrupt a sector directly on the media (VERY DANGEROUS)\n"
@@ -1949,6 +1981,7 @@ static void usage_help (int clue, int rc)
 	" --sanitize-crypto-scramble  Change the internal encryption keys that used for used data\n"
 	" --sanitize-freeze-lock      Lock drive's sanitize features until next power cycle\n"
 	" --sanitize-overwrite  PATTERN  Overwrite the internal media with constant PATTERN\n"
+	" --sanitize-overwrite-passes COUNT  Number of overwrite passes from 0 to 7, default 0 means 16 passes\n"
 	" --sanitize-status           Show sanitize status information\n"
 	" --security-help             Display help for ATA security commands\n"
 	" --set-sector-size           Change logical sector size of drive\n"
@@ -2537,18 +2570,18 @@ void process_dev (char *devname)
 					break;
 				default:printf("\?\?\?)\n");
 			}
-               } else if (get_io32bit) {
-                       err = errno;
-                       perror(" HDIO_GET_32BIT failed");
+		} else if (get_io32bit) {
+			err = errno;
+			perror(" HDIO_GET_32BIT failed");
 		}
 	}
 	if (do_defaults || get_unmask) {
 		if (0 == ioctl(fd, HDIO_GET_UNMASKINTR, &parm)) {
 			printf(" unmaskirq     = %2ld", parm);
 			on_off(parm);
-               } else if (get_unmask) {
-                       err = errno;
-                       perror(" HDIO_GET_UNMASKINTR failed");
+		} else if (get_unmask) {
+			err = errno;
+			perror(" HDIO_GET_UNMASKINTR failed");
 		}
 	}
 
@@ -2559,9 +2592,9 @@ void process_dev (char *devname)
 				printf(" (DMA-Assisted-PIO)\n");
 			else
 				on_off(parm);
-                } else if (get_dma) {
-                       err = errno;
-                       perror(" HDIO_GET_DMA failed");
+		} else if (get_dma) {
+			err = errno;
+			perror(" HDIO_GET_DMA failed");
 		}
 	}
 	if (get_dma_q) {
@@ -2575,7 +2608,7 @@ void process_dev (char *devname)
 			on_off(parm);
 		} else if (get_keep) {
 			err = errno;
-                        perror(" HDIO_GET_KEEPSETTINGS failed");
+			perror(" HDIO_GET_KEEPSETTINGS failed");
 		}
 	}
 	if (get_nowerr) {
@@ -2686,7 +2719,7 @@ void process_dev (char *devname)
 					fprintf(stderr, "Wrote IDENTIFY DEVICE data to \"%s\"\n", raw_identify_path);
 					close(rfd);
 				}
-      			} else {
+			} else {
 				identify(fd, (void *)id);
 			}
 		}
@@ -2785,7 +2818,7 @@ void process_dev (char *devname)
 					__u16 *dco = get_dco_identify_data(fd, 1);
 					if (dco) {
 						__u64 dco_max = dco[5];
-						dco_max = ((((__u64)dco[5]) << 32) | (dco[4] << 16) | dco[3]) + 1;
+						dco_max = ((((__u64)dco[5]) << 32) | ((__u64)dco[4] << 16) | (__u64)dco[3]) + 1;
 						printf("(%llu?)", dco_max);
 					}
 					printf(", HPA setting seems invalid");
@@ -2924,6 +2957,7 @@ identify_from_stdin (void)
 		}
 	} while (wc < 256);
 	putchar('\n');
+	id = sbuf;  /* necessary for --Istdin:  identify() needs id[] */
 	identify(-1, sbuf);
 	return;
 eof:
@@ -3244,6 +3278,9 @@ get_longarg (void)
 		--num_flags_processed;	/* doesn't count as an action flag */
 	} else if (0 == strcasecmp(name, "direct")) {
 		open_flags |= O_DIRECT;
+		--num_flags_processed;	/* doesn't count as an action flag */
+	} else if (0 == strcasecmp(name, "sanitize-overwrite-passes")) {
+		get_u64_parm(0, 0, NULL, &sanitize_overwrite_passes, 0, 7, name, "Number of passes must be in range 0..7");
 		--num_flags_processed;	/* doesn't count as an action flag */
 	} else if (0 == strcasecmp(name, "drq-hsm-error")) {
 		drq_hsm_error = 1;
